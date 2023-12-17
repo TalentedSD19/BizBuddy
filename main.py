@@ -4,13 +4,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from datetime import datetime
 import requests
-import random
-import asyncio
 import time
 
 app = FastAPI()
 
-global_id = 0
+global_id = ''
 global_mid = ''
 global_sid = ''
 global_ratings = []
@@ -33,9 +31,11 @@ async def handle_request(request: Request):
     if intent == "track_order_by_id":
         parameters = payload['queryResult']['parameters'] 
         print(parameters)
-        position = track_order_by_id(parameters['number'])
+        merchant_id = parameters['merchant_id']
+        order_id = parameters['order_id']
+        position = track_order_by_id(merchant_id,order_id)
         return JSONResponse(content={
-    "fulfillmentText" : f"The order with id {int(parameters['number'])} is in {position}"})
+    "fulfillmentText" : f"Order id {parameters['order_id']} : {position}"})
 
 
     #Search suppliers by rating-----------------------------------------
@@ -68,7 +68,7 @@ async def handle_request(request: Request):
     #Search supplier by ID---------------------------------------------------------------
     elif intent == "search_by_supplier_id":
         parameters = payload['queryResult']['parameters']
-        id = parameters['number']
+        id = parameters['id']
         supplier = return_supplier_info_with_id(id)
         return JSONResponse(content={
     "fulfillmentText" : f"The information about the supplier with id {id} is \n{supplier}"})
@@ -104,12 +104,12 @@ async def handle_request(request: Request):
         review = parameters['any']
         confirm = await send_review_to_backend(global_mid,global_sid,global_ratings,review)
         return JSONResponse(content={
-    "fulfillmentText" : f"{confirm} for s{int(global_sid)} by m{int(global_mid)}"})
+    "fulfillmentText" : f"{confirm} for {global_sid} by {global_mid}"})
 
     #find net profit
     elif intent == 'collect_merchant_id_for_profit':
         parameters = payload['queryResult']['parameters']
-        id = review = parameters['number']
+        id = review = parameters['id']
         profit = find_profit_by_id(id)
         return JSONResponse(content={
     "fulfillmentText" : f"{profit}"})
@@ -123,7 +123,7 @@ async def handle_request(request: Request):
     #find profit for collected date
     elif intent == "collect_id_for_datewise_profit":
         parameters = payload['queryResult']['parameters']
-        id = parameters['number']
+        id = parameters['id']
         profit = await find_datewise_profit_by_id(global_date,id)
         return JSONResponse(content={
     "fulfillmentText" : f"Your profit for the day {global_date} is Rupees {profit}"})
@@ -140,18 +140,20 @@ async def handle_request(request: Request):
     #place order to the given supplier
     elif intent == "confirm_order":
         parameters = payload['queryResult']['parameters']
-        id = parameters['number']
-        confirm = place_order(id,global_product,global_quantity)
+        mid = parameters['merchant_id']
+        sid = parameters['supplier_id']
+        order_id = place_order(mid,sid,global_product,global_quantity)
         return JSONResponse(content={
-    "fulfillmentText" : f"Your order for {global_quantity} units of {global_product} from supplier id: {id} has been placed successfully"})
+    "fulfillmentText" : f"Your order for {global_quantity} units of {global_product} from supplier id: {sid} has been placed successfully. Your order id is {order_id}"})
 
     #cancel order by order id 
     elif intent == "cancel_order_by_id":
         parameters = payload['queryResult']['parameters']
-        order_id = parameters['number']
-        confirm = cancel_order(order_id)
+        merchant_id = parameters['merchant_id']
+        order_id = parameters['order_id']
+        confirm = cancel_order(merchant_id, order_id)
         return JSONResponse(content={
-    "fulfillmentText" : f"Your order with order id {order_id} has been cancelled successfully"})
+    "fulfillmentText" : f"{confirm}"})
 
     #Return Product info and Suppliers selling by product name
     elif intent == 'search_by_product_name':
@@ -164,7 +166,7 @@ async def handle_request(request: Request):
     #Return Product info and Suppliers selling by product ID
     elif intent == 'search_by_product_id':
         parameters = payload['queryResult']['parameters']
-        product_id = parameters['number']
+        product_id = parameters['id']
         product_info = await return_product_info_by_id(product_id)
         return JSONResponse(content={
     "fulfillmentText" : f"{product_info}"})
@@ -172,7 +174,7 @@ async def handle_request(request: Request):
     #search top supplier selling a product by product id
     elif intent == 'search_supplier_by_product_id':
         parameters = payload['queryResult']['parameters']
-        product_id = parameters['number']
+        product_id = parameters['id']
         top_suppliers = find_top_suppliers_selling_product_id(product_id)
         return JSONResponse(content={
     "fulfillmentText" : f"The top suppliers selling the product with id {product_id} are {top_suppliers}"})
@@ -198,7 +200,7 @@ async def handle_request(request: Request):
     elif intent == "collect_email_and_merchant_id":
         parameters = payload['queryResult']['parameters']
         email = parameters['email']
-        id = parameters['number']
+        id = parameters['id']
         print(email,id)
         if yes:
             ticket_number = 0
@@ -212,20 +214,20 @@ async def handle_request(request: Request):
         parameters = payload['queryResult']['parameters']
         global global_id
         global global_risks
-        global_id = parameters['number']
+        global_id = parameters['id']
         global_risks = await detailed_risk_analysis(global_id)
         return JSONResponse(content={
-        "fulfillmentText" : f'''Do you want to get the detailed risk analysis for merchant m{int(global_id)}'''})
+        "fulfillmentText" : f'''Do you want to get the detailed risk analysis for merchant {global_id}'''})
     
     #ASK AI for risk analysis output detailed_risk_analysis_confirmation
     elif intent == "detailed_risk_analysis_output":
         time.sleep(4)
         if global_risks == 'NOT_FOUND':
             return JSONResponse(content={
-        "fulfillmentText" : f'''NO POSSIBLE RISKS IDENTIFIED FOR MERCHANT ID m{int(global_id)}'''})
+        "fulfillmentText" : f'''NO POSSIBLE RISKS IDENTIFIED FOR MERCHANT ID {global_id}'''})
         else:
             return JSONResponse(content={
-        "fulfillmentText" : f'''POSSIBLE RISKS FOR MERCHANT ID m{int(global_id)}
+        "fulfillmentText" : f'''POSSIBLE RISKS FOR MERCHANT ID {global_id}
 {global_risks}'''})
         
     #creating possible delay for optimization
@@ -233,10 +235,10 @@ async def handle_request(request: Request):
         parameters = payload['queryResult']['parameters']
         # global global_id
         global global_optimization
-        global_id = parameters['number']
+        global_id = parameters['id']
         global_optimization = await business_optimization_recommendation(global_id)
         return JSONResponse(content={
-        "fulfillmentText" : f'''Do you want to get the possible optimizations for merchant id m{int(global_id)}'''})
+        "fulfillmentText" : f'''Do you want to get the possible optimizations for merchant id {global_id}'''})
     
 
     #ask AI for business optimization output  
@@ -244,22 +246,22 @@ async def handle_request(request: Request):
         time.sleep(3)
         if global_risks == 'NOT_FOUND':
             return JSONResponse(content={
-        "fulfillmentText" : f'''NO POSSIBLE OPTIMIZATIONS IDENTIFIED FOR MERCHANT ID m{int(global_id)}'''})
+        "fulfillmentText" : f'''NO POSSIBLE OPTIMIZATIONS IDENTIFIED FOR MERCHANT ID {global_id}'''})
         else:
             return JSONResponse(content={
-        "fulfillmentText" : f'''POSSIBLE BUSINESS OPTIMIZATIONS TO BE MADE FOR MERCHANT ID m{int(global_id)}
+        "fulfillmentText" : f'''POSSIBLE BUSINESS OPTIMIZATIONS TO BE MADE FOR MERCHANT ID {global_id}
 {global_optimization}'''})
        
     #Trying to create a possible delay for my most profitable product
     elif intent == "my_most_profitable_product_confirmation":
         parameters = payload['queryResult']['parameters']
-        global_id = parameters['number']
+        global_id = parameters['id']
         global_product = await most_profitable_product(global_id)
     
     #ask AI for my most profitable product
     elif intent == "my_most_profitable_product":
         return JSONResponse(content={
-        "fulfillmentText" : f'''Most profitable products for Merchant ID m{(int(global_id))} are 
+        "fulfillmentText" : f'''Most profitable products for Merchant ID {global_id} are 
 {global_product}'''})
     
     #Trying to create a possible delay 
@@ -289,13 +291,35 @@ async def handle_request(request: Request):
         return JSONResponse(content={
         "fulfillmentText" : f'''Most selling products in the market are:
 {global_product}'''})
+    
+    #ask for inventory stock for a particular merchant 
+    elif intent == "inventory_overview":
+        parameters = payload['queryResult']['parameters']
+        merchant_id = parameters['id']
+        stock_info = await find_inventory_stock(merchant_id)
+        return JSONResponse(content={
+        "fulfillmentText" : f'''{stock_info}'''})
+    
+    elif intent == "inventory_overview_AI":
+        parameters = payload['queryResult']['parameters']
+        merchant_id = parameters['id']
+        stock_info = await find_inventory_stock_AI(merchant_id)
+        return JSONResponse(content={
+        "fulfillmentText" : f'''{stock_info}'''})
 
 ############################################################################################################################################################
 ############################################################################################################################################################
 ############################################################################################################################################################
 
-def track_order_by_id(parameters):
-    return "kolkata"
+def track_order_by_id(merchant_id,order_id):
+    try:
+        response = requests.get(f"https://bizminds-backend.onrender.com/api/operations/check_status/{merchant_id}/{order_id}")
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        print(data)
+        return data['message']
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
 
 async def suppliers_with_top_delivery_rating():
     try:
@@ -390,7 +414,7 @@ Product Quality Rating = {i['rating'][2]}
 
 def return_supplier_info_with_id(id):
     try:
-        response = requests.get(f"https://bizminds-backend.onrender.com/api/suppliers/get_supplier/s{int(id)}")
+        response = requests.get(f"https://bizminds-backend.onrender.com/api/suppliers/get_supplier/{id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         print(data)
@@ -419,7 +443,7 @@ Products sold :
 #Return Product info and the supplier id's selling it /api/suppliers/by_product_name/:name
 async def return_product_info_by_id(product_id):
     try:
-        response = requests.get(f"https://bizminds-backend.onrender.com/api/suppliers/by_productID/p{int(product_id)}")
+        response = requests.get(f"https://bizminds-backend.onrender.com/api/suppliers/by_productID/{product_id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         product = data['Product'][0]
@@ -463,12 +487,11 @@ Sold by : {supplier_list}
 
 async def send_review_to_backend(global_mid,global_sid,global_ratings,review):
     review_data = {
-    "merchant_id":f"m{int(global_mid)}",
-    "supplier_id":f"s{int(global_sid)}",
+    "merchant_id":f"{global_mid}",
+    "supplier_id":f"{global_sid}",
     "rating":global_ratings,
     "review":review
     }
-    # print(review_data)
 
     try:
         response = requests.post("https://bizminds-backend.onrender.com/api/ratings/add_ratings_reviews", data=review_data)
@@ -483,13 +506,13 @@ async def send_review_to_backend(global_mid,global_sid,global_ratings,review):
 
 def find_profit_by_id(id):
     try:
-        response = requests.get(f"https://bizminds-backend.onrender.com/api/sales/get/totalprofit/m{int(id)}")
+        response = requests.get(f"https://bizminds-backend.onrender.com/api/sales/get/totalprofit/{id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         revenue = data['Total_SP']
         profit = data['Total_Profit']
         output = f'''
-Merchant ID :  m{int(id)}
+Merchant ID :  {id}
 Total Revenue till date: Rs {revenue}
 Total Profit till date: Rs {profit}
 
@@ -511,7 +534,7 @@ async def find_datewise_profit_by_id(date,id):
     if date[0]=='0':
         date = date[1:]
     date_data = {
-        "merchant_id":f"m{int(id)}",
+        "merchant_id":f"{id}",
         "date": date
     }
     
@@ -526,11 +549,29 @@ async def find_datewise_profit_by_id(date,id):
     except requests.exceptions.RequestException as e:
         print(f"Error: {e}")
 
-def place_order(id,product,quantity):
-    return True
+def place_order(mid,sid,product,quantity):
+    order_data = {
+        "product": product,
+        "supplier": sid,
+        "quantity": quantity,
+    }
 
-def cancel_order(id):
-    return True
+    try:
+        response = requests.post(f"https://bizminds-backend.onrender.com/api/operations/add/{mid}/placed", data=order_data)
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        return data['operation']['operation_id']
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
+
+def cancel_order(merchant_id,order_id):
+    try:
+        response = requests.patch(f"https://bizminds-backend.onrender.com/api/operations/cancel_operation/{merchant_id}/{order_id}")
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        return f"Order ID {order_id} {data['message'][8:]}"
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
 
 
 #returns a list of all the sellers of the product id but unsorted
@@ -593,7 +634,7 @@ Price of {product_name} = {i['product_prices'][i['products_sold'].index(product_
 # handle issues api calling function
 async def store_issue_in_db(issue,email,id):
     issue_data = {
-        "merchant_id": f'm{(int(id))}',
+        "merchant_id": f'{id}',
         "email": email,
         "issue": issue,
     }
@@ -609,7 +650,7 @@ async def store_issue_in_db(issue,email,id):
 
 async def detailed_risk_analysis(id):
     try:
-        response = requests.get(f"https://insights-bizminds.onrender.com/getRisks?merchantId=m{int(id)}")
+        response = requests.get(f"https://insights-bizminds.onrender.com/getRisks?merchantId={id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         print(data)
@@ -619,7 +660,7 @@ async def detailed_risk_analysis(id):
 
 async def business_optimization_recommendation(id):
     try:
-        response = requests.get(f"https://insights-bizminds.onrender.com/getOptimization?merchantId=m{int(id)}")
+        response = requests.get(f"https://insights-bizminds.onrender.com/getOptimization?merchantId={id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         print(data)
@@ -629,17 +670,18 @@ async def business_optimization_recommendation(id):
 
 async def most_profitable_product(id):
     try:
-        response = requests.get(f"https://insights-bizminds.onrender.com/getProductWithMaxProfit?merchantId=m{int(id)}")
+        response = requests.get(f"https://insights-bizminds.onrender.com/getProductWithMaxProfit?merchantId={id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
-        output = f'''
-Product Name : {data['name']}
-Product ID : {data['product_id']}
-Product Info : {data['product_info']}
+        print(data)
+#         output = f'''
+# Product Name : {data['name']}
+# Product ID : {data['product_id']}
+# Product Info : {data['product_info']}
 
-'''
-        print(output)
-        return output
+# '''
+#         print(output)
+        return data
     
     except requests.exceptions.RequestException as e:
         print(f"Error: {e}")
@@ -658,6 +700,42 @@ async def most_selling_product_in_market():
 async def most_profitable_product_in_market():
     try:
         response = requests.get(f"https://insights-bizminds.onrender.com/topProductForMaxProfit")
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        print(data)
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
+
+async def find_inventory_stock(merchant_id):
+    try:
+        output =''
+        response = requests.get(f"https://bizminds-backend.onrender.com/api/stocks/inventory/{merchant_id}")
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        data=data[0]
+        print(data)
+        products = data['products']
+        quantity = data['quantity']
+        for i in range(len(products)):
+            # response = requests.get(f"https://bizminds-backend.onrender.com/api/suppliers/by_productID/{products[i]}")
+            # # print(response)
+            # response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+            # data = response.json()
+            # product_name = data['Product'][0]['name']
+            # Product Name : {product_name}
+            output+=f'''
+Product ID : {products[i]}
+Quantity Left : {quantity[i]}
+'''
+        return output
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
+
+async def find_inventory_stock_AI(merchant_id):
+    try:
+        output =''
+        response = requests.get(f"https://insights-bizminds.onrender.com/getLowStocks?merchantId={merchant_id}")
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         print(data)
